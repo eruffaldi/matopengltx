@@ -1,5 +1,10 @@
 function r = mglRotateRad(rad,x,y,z)
 
+if nargin == 2
+    y = x(2);
+    z = x(3);
+    x = x(1);
+end
 c = cos(rad);
 s = sin(rad);
 c1 = 1-c;
