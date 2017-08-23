@@ -2,6 +2,9 @@
 %
 % Look At as generic object matrix (with Z pointing)
 %
+% eye
+% target
+% up
 function M = lookat(e,target,up)
 
 e=e(:);
