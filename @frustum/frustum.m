@@ -23,13 +23,42 @@ classdef frustum
             self = self.transformByMatrix(A);
         end
 
+        function [c,r] = getboundingsphere(self)
+            cors = self.getcorners();
+            [r,c] = ExactMinBoundSphere3D(cors');
+        end
+        
+        function planes = getplanes(self)            
+            M = self.proj;
+            planes = [];
+            planes.near = M(4,:)+M(3,:);
+            planes.far = M(4,:)-M(3,:);
+            planes.left = M(4,:)+M(1,:);
+            planes.right = M(4,:)-M(3,:);
+            planes.bottom = M(4,:)+M(2,:);
+            planes.top = M(4,:)-M(2,:);
+        end
+
         % slice the frustum by the plane (oblique frustum)
-        function self = slice(self,plane)
+        function self = slicenearplane(self,normal,point)
+            M = self.proj;
+            C = [normal(:)',-sum(normal.*point)];
+            Cp = inv(M)'*C;
+            Qp = [sgn(Cp(1)),sgn(Cp(2)),1,1];
+            Q = inv(M)*Qp;
+            M3p = (2*M(4,:)*Q/(C*Q))*C-M(4,:);
+            self.proj(3,:) = M3p;            
         end
         
         % returns the corners: first near clockwise, then far
-        function self = corners(self)
-            
+        function xyz = getcorners(self)
+            x=[0 1 1 0 0 1 1 0]*2-1;
+            y=[0 0 1 1 0 1 0 1]*2-1; 
+            z=[0 0 0 0 1 1 1 1]*2-1;
+            w = ones(size(x));
+            ppts = [x(:),y(:),z(:),w(:)]';
+            wpts = inv(self.proj)*ppts;
+            xyz = wpts(1:3,:)./repmat(wpts(4,:),3,1);
         end
         
         % assuming the camera has pixel xy and resolution wh returns
@@ -54,7 +83,24 @@ classdef frustum
         end
         
         % display
-        function self = visualize(self)
+        function hh = visualize(self)
+            x=[0 1 1 0 0 0;1 1 0 0 1 1;1 1 0 0 1 1;0 1 1 0 0 0]*2-1;
+            y=[0 0 1 1 0 0;0 1 1 0 0 0;0 1 1 0 1 1;0 0 1 1 1 1]*2-1;
+            z=[0 0 0 0 0 1;0 0 0 0 0 1;1 1 1 1 0 1;1 1 1 1 0 1]*2-1;
+            w = ones(size(x));
+            ppts = [x(:),y(:),z(:),w(:)]';
+            wpts = inv(self.proj)*ppts;
+            xyz = wpts(1:3,:)./repmat(wpts(4,:),3,1);
+            
+            hh = [];
+            ax = reshape(xyz(1,:),4,[]);
+            ay = reshape(xyz(2,:),4,[]);
+            az = reshape(xyz(3,:),4,[]);
+            for i=1:6
+                h=patch(ax(:,i),ay(:,i),az(:,i),'k');
+                hh(end+1) = h;
+                set(h,'edgecolor','w')
+            end            
         end
         
         function s = asfrustumparams(self)
@@ -69,7 +115,7 @@ classdef frustum
     methods(Static)
         % from OpenCV compatible intrinsics and near/far specification
         function r = fromintrinsics(K,near,far,w,h)
-            r = frustum(mcvIntrinsics2Prj(K,near,far,w,h);
+            r = frustum(mcvIntrinsics2Prj(K,near,far,w,h));
         end
         
         % from OpenGL glFrustum
