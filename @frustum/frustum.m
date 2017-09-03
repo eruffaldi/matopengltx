@@ -6,26 +6,43 @@ classdef frustum
     %   points: center + corners (5 or 8)
     
     properties
-        % affine transform from world to clip space 
-        proj
+        proj0 
+        proj  
+        pose
     end
     
     methods
         function self = frustum(P)
             self.proj = P;
+            self.proj0 = P;
+            self.pose = eye(4);
         end
         
+        
+        function p = worldPointToLocal(self,p)
+            p4 = self.proj*[p(:);1];
+            p = p4(1:3)/p4(4);
+        end
+        
+        function p = localPointToWorld(self,p)
+            p4 = self.proj\[p(:);1];
+            p = p4(1:3)/p4(4);
+        end
+        
+        function po = pixelToLocal(self,p,w,h)
+            pp = 2*p./[w,h]-[1,1];
+            po = [pp(:);-1];
+        end
+
+        function pW = pixelToWorld(self,p,w,h)
+            pL = self.pixelToLocal(p,w,h);
+            pW = self.localPointToWorld(pL);
+        end
+
         % transform the frustum using the matrix affine M
         function self = transformByMatrix(self,M)
-            self.proj = self.proj * M;
-        end
-        
-        function r = hasNear(self)
-            r = self.proj(1,1) > 0;
-        end
-        
-        function r = hasFar(self)
-            r = isnan(self.proj(3,4)) == 0;
+            self.pose = M* self.pose;
+            self.proj = self.proj0 * self.pose;
         end
         
         % transform the frustum using the matrix rotation and position
@@ -36,6 +53,14 @@ classdef frustum
             self = self.transformByMatrix(A);
         end
         
+        function r = hasNear(self)
+            r = self.proj(1,1) > 0;
+        end
+        
+        function r = hasFar(self)
+            r = isnan(self.proj(3,4)) == 0;
+        end
+              
         function newplane = worldPlaneToLocal(self,p)
             newplane = (inv(self.proj)'*p);
         end
@@ -43,6 +68,7 @@ classdef frustum
         function newplane = localPlaneToWorld(self,p)
             newplane = (self.proj'*p);
         end
+        
         
         function [c,r] = getboundingsphere(self)
             cors = self.getcorners();
@@ -58,8 +84,7 @@ classdef frustum
         
         % in normalized coordinates this is [0,0,-1]
         function p = getOrigin(self)
-            w = self.P* [0,0,-1,1]';
-            p = p(1:3)/w(4);
+            p = self.pose(1:3,4);
         end
 
         function r = getPlanesLocal(self)
