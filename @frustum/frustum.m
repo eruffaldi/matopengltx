@@ -1,7 +1,12 @@
 classdef frustum
     %frustum representation class
+    %
+    % Alternative representation with points and planes
+    %   planes: 4..6 using support points
+    %   points: center + corners (5 or 8)
     
     properties
+        % affine transform from world to clip space 
         proj
     end
     
@@ -15,6 +20,14 @@ classdef frustum
             self.proj = self.proj * M;
         end
         
+        function r = hasNear(self)
+            r = self.proj(1,1) > 0;
+        end
+        
+        function r = hasFar(self)
+            r = isnan(self.proj(3,4)) == 0;
+        end
+        
         % transform the frustum using the matrix rotation and position
         function self = transformByRotPos(self,R,p)
             A= eye(4);
@@ -22,21 +35,62 @@ classdef frustum
             A(1:3,4) = p;
             self = self.transformByMatrix(A);
         end
+        
+        function newplane = worldPlaneToLocal(self,p)
+            newplane = (inv(self.proj)'*p);
+        end
 
+        function newplane = localPlaneToWorld(self,p)
+            newplane = (self.proj'*p);
+        end
+        
         function [c,r] = getboundingsphere(self)
             cors = self.getcorners();
             [r,c] = ExactMinBoundSphere3D(cors');
         end
+
+        function [c,r] = getboundingspherefast(self)
+            cors = self.getcorners();
+            c = mean(cors,2);
+            r = sqrt(max(sum((cors-repmat(c,1,8)).^2,1)));
+            
+        end
         
-        function planes = getplanes(self)            
-            M = self.proj;
+        % in normalized coordinates this is [0,0,-1]
+        function p = getOrigin(self)
+            w = self.P* [0,0,-1,1]';
+            p = p(1:3)/w(4);
+        end
+
+        function r = getPlanesLocal(self)
+            % near far left,right,bottom,top
+            r = [0,0,1,1;0,0,-1,1;1,0,0,1; -1,0,0,1; 0,1,0,1; 0,-1,0,1];
+        end
+        
+        function planes = getPlanes(self,asstruct)            
+            M = self.proj;            
             planes = [];
-            planes.near = M(4,:)+M(3,:);
-            planes.far = M(4,:)-M(3,:);
+            if(self.hasNear())
+                planes.near = M(4,:)+M(3,:);
+                if(self.hasFar())
+                    planes.far = M(4,:)-M(3,:);
+                end
+            else
+                % origin in 0 and frustum is limited
+                %planes.far = 
+            end
             planes.left = M(4,:)+M(1,:);
-            planes.right = M(4,:)-M(3,:);
+            planes.right = M(4,:)-M(1,:);
             planes.bottom = M(4,:)+M(2,:);
             planes.top = M(4,:)-M(2,:);
+            if asstruct == 0
+                ff = fieldnames(planes);
+                pp = zeros(length(ff),4);
+                for I=1:length(ff)
+                    pp(I,:) = planes.(ff{I});
+                end
+                planes = pp;
+            end
         end
 
         % slice the frustum by the plane (oblique frustum)
@@ -61,25 +115,59 @@ classdef frustum
             xyz = wpts(1:3,:)./repmat(wpts(4,:),3,1);
         end
         
+        
+        function r = verifyPlanes(self)
+            pW = self.getPlanes(0); % N x 4
+            pL = self.getPlanesLocal();
+            
+            pWL = self.worldPlaneToLocal(pW')';
+            pLW = self.localPlaneToWorld(pL')';
+            pL
+            pWL
+            pW
+            pLW
+        end 
+        
         % assuming the camera has pixel xy and resolution wh returns
         % the real world space frustumc corresponding to that pixel
-        function pt = getpixelfrustum(self,xy,width,height)
-        end
-
-        % intersect TODO
-        function self = intersect(self,other)
-        end
-        
-        % union (HOW?)
-        function self = union(self,other)
-        end
-
-        % clip a line by the frustum
-        function self = clipline(self,line)
+        %function pt = getpixelfrustum(self,xy,width,height)
+        %end
+        function [r,output] = intersectFrustum2(self,other)
+            p2W = other.getPlanes(0);
+            p2L = self.worldPlaneToLocal(p2W')';
+            A = -p2L(:,1:3);
+            b = p2L(:,4);
+            [r,~,~,output] = linprog(ones(3,1),A,b,[],[],-ones(3,1),ones(3,1));
+            r = isempty(r) == 0;
         end
         
-        % converts to mesh
-        function self = tomesh(self)
+        
+        function [r,output] = intersectFrustum(self,other)
+            p1 = self.getPlanes(0);
+            p2 = other.getPlanes(0);
+            p = [p1;p2];
+            A = -p(:,1:3);
+            b = p(:,4);
+            % A x >= -b 
+            % - Ax <= b
+            [r,~,~,output] = linprog(ones(3,1), A,b);
+            r = isempty(r) == 0;
+        end
+    
+        % intersect against a sphere
+        function b = intersectSphere(self,center,radius)
+            pp = self.getPlanes(1);
+            f = fieldnames(pp);
+            negRadius = -radius;
+            for J=1:length(f)
+                p = pp.(f{J});
+                d2p = sum(p.*center);
+                if d2p < negRadius
+                    b = false;
+                    return;
+                end
+            end
+            b = true;
         end
         
         % display
